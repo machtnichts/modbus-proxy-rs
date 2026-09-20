@@ -1,0 +1,29 @@
+# Rust build output
+/target/
+**/*.rs.bk
+Cargo.lock.orig
+
+# Installed binary (built by `make static` / `make install`)
+/bin/*
+
+# Local run artifacts
+*.log
+*.stdout
+/measure/*.json
+!/measure/config.json
+
+# Python helper tools in this repo
+__pycache__/
+*.pyc
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local notes that must never be published
+NOTES-local.md
+
+# helper scripts for the controller that ran here before, kept locally only
+local-tools/

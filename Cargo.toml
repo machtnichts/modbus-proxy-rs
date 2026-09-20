@@ -1,0 +1,27 @@
+[package]
+name = "muxproxy"
+version = "0.1.0"
+edition = "2021"
+description = "Caching, multiplexing Modbus/TCP proxy for a single-client device"
+license = "MIT"
+
+# Deliberately NO dependencies: the binary must not depend on a package
+# ecosystem, a lock file resolution or an interpreter at runtime. Everything
+# here is std, so `cargo build --release` works offline and the result is one
+# self-contained binary.
+[dependencies]
+
+[[bin]]
+name = "muxproxy"
+path = "src/main.rs"
+
+# A stub Modbus device for the integration tests (also usable by hand).
+[[bin]]
+name = "stubmodbus"
+path = "src/bin/stubmodbus.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+# NOTE: no panic="abort" on purpose - a panicking client thread must not take the
+# whole proxy (and the plant's readings) down with it.

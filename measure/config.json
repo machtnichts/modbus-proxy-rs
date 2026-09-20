@@ -1,0 +1,38 @@
+{
+  "_comment": "MEASUREMENT config - not the production one. Empty poll ranges on purpose: the proxy then makes no requests of its own, so every upstream read is caused by a client and the inverter sees only what that client asks for. DEBUG + log_every_request records each client request with a millisecond timestamp.",
+  "upstream": {
+    "host": "192.168.178.84",
+    "port": 1502,
+    "unit": 1,
+    "connect_timeout": 8.0,
+    "response_timeout": 1.0
+  },
+  "listen": {
+    "host": "0.0.0.0",
+    "port": 1503
+  },
+  "http": {
+    "host": "0.0.0.0",
+    "port": 1504
+  },
+  "poll": {
+    "interval_active": 5.0,
+    "interval_idle": 30.0,
+    "min_request_gap": 0.12,
+    "ondemand_ttl": 2.0,
+    "startup_delay": 0.0,
+    "max_registers_per_read": 125,
+    "ranges": []
+  },
+  "logging": {
+    "level": "DEBUG",
+    "file": "/home/adermake/EV-CHARGER-WT-HA/logs/muxproxy-measure.log",
+    "max_bytes": 8388608,
+    "backup_count": 3
+  },
+  "policy": {
+    "allow_writes": true,
+    "reject_unsupported_functions": false,
+    "log_every_request": true
+  }
+}

@@ -1,0 +1,32 @@
+[Unit]
+Description=Modbus/TCP proxy - SolarEdge inverter for any Modbus consumer (Rust, static)
+Documentation=file:///home/adermake/EV-CHARGER-WT-HA/modbus-proxy-rs/README.md
+After=network-online.target
+Wants=network-online.target
+# A Modbus consumer (the plant's EV charging app; optionally Home Assistant)
+# reads the inverter through this proxy (192.168.178.44:1503). A containerised
+# consumer may start before this unit is up, in which case its first meter reads
+# fail and it retries - so ordering is not required
+# for correctness, only for a quieter startup.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/adermake/EV-CHARGER-WT-HA/modbus-proxy-rs
+# make install puts the statically linked binary here
+ExecStart=/home/adermake/EV-CHARGER-WT-HA/modbus-proxy-rs/bin/muxproxy -c /home/adermake/EV-CHARGER-WT-HA/modbus-proxy-rs/config/muxproxy.json
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/adermake/EV-CHARGER-WT-HA/logs/muxproxy-rs.stdout
+StandardError=append:/home/adermake/EV-CHARGER-WT-HA/logs/muxproxy-rs.stdout
+# the proxy only speaks Modbus to the inverter and serves its consumers
+NoNewPrivileges=true
+PrivateTmp=true
+
+# The inverter accepts ONE Modbus client at a time. Never run this alongside
+# another proxy or a direct reader on 192.168.178.84:1502.
+# the consumers' meter config must point at this proxy (192.168.178.44:1503),
+# not at the inverter.
+
+[Install]
+WantedBy=default.target

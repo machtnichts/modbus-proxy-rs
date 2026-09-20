@@ -1,0 +1,38 @@
+{
+  "_comment": "Production config for serving the SolarEdge inverter to this plant's readers. Three deliberate choices: (1) no poll ranges, so the proxy issues no requests of its own and the inverter only ever sees what the client asks for; (2) a 1 s upstream response timeout, because a SunSpec model scan probes addresses this inverter never answers (50000) and a longer timeout makes the client give up first - that was the 'i/o timeout' / 'not a SunSpec device' failure. Real reads from this inverter take ~50-100 ms, so 1 s is 10x headroom; (3) ondemand_ttl 10 s: with no poll ranges every cached span comes from an on-demand fetch, so this is the window in which two readers asking for the same registers (the charging app's inverter and meter blocks overlap) share one device read instead of issuing two. The cost is that a reader can act on data up to 10 s old - but only up to: past the TTL an expired span is NEVER handed out. If nothing new could be read the client gets the error (exception 0x0B), because on the wire a served leftover is indistinguishable from a fresh reading. Set logging.level to DEBUG and log_every_request to true to trace every request.",
+  "upstream": {
+    "host": "192.168.178.84",
+    "port": 1502,
+    "unit": 1,
+    "connect_timeout": 8.0,
+    "response_timeout": 5.0
+  },
+  "listen": {
+    "host": "0.0.0.0",
+    "port": 1503
+  },
+  "http": {
+    "host": "0.0.0.0",
+    "port": 1504
+  },
+  "poll": {
+    "interval_active": 5.0,
+    "interval_idle": 30.0,
+    "min_request_gap": 1.0,
+    "ondemand_ttl": 10.0,
+    "startup_delay": 0.0,
+    "max_registers_per_read": 125,
+    "ranges": []
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "/home/adermake/EV-CHARGER-WT-HA/logs/muxproxy.log",
+    "max_bytes": 2097152,
+    "backup_count": 3
+  },
+  "policy": {
+    "allow_writes": true,
+    "reject_unsupported_functions": false,
+    "log_every_request": false
+  }
+}
