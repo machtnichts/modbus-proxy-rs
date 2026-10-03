@@ -233,12 +233,27 @@ Switch all consumers in one step, never partially.
 
 ### What a consumer does through it (measured)
 
-- one poll cycle every **30 s** (median 29.99 s over 14 cycles) — the client's own
-  default; this proxy imposes no cadence
-- ~7 requests per cycle, up to ~26 when it re-walks the SunSpec model list:
-  model 101 `40071..40120` (inverter), model 203 `40190..40294` (grid meter),
-  vendor battery registers `57344..57733`, vendor meter block `190..294`
+Two consumers have been measured through this proxy: the one in service today and the one
+before it. Both matter, because the failure statistics in `STATE.md` come from the older one.
+
+**Today — the plant's charging app, three windows and nothing else**
+
+- `32@40071` (inverter), `53@40190` (meter), `18@57716` (battery): 103 registers per burst,
+  no per-register reads, no reads outside these spans
+- a burst takes ~2.5 s, because the proxy holds `min_request_gap` 1 s between device requests
+- a burst every **60 s** — measured 2026-10-03, upstream connections 59.98 / 60.08 / 60.02 s
+  apart. The app's loop is configured for 30 s, but its "due" test is measured from the *end*
+  of the previous read, so each read lands on every second loop.
 - proxy answers in ~100 ms median (p95 161 ms), zero timeouts
+
+**Before that — the older charging controller (until 18.09.2026)**
+
+- one poll cycle every **30 s** (median 29.99 s over 14 cycles)
+- ~7 requests per cycle, up to ~26 when it re-walked the SunSpec model list: model 101
+  `40071..40120`, model 203 `40190..40294`, vendor battery `57344..57733`, vendor meter block
+  `190..294`. That is the read pattern behind the failures recorded in `STATE.md`
+  (`2@57716`, `105@40190`, `50@40071`, `4@57718`) — the app does not ask for those blocks at
+  all, which is how the two eras can be told apart in the logs.
 
 ### Rollback
 
