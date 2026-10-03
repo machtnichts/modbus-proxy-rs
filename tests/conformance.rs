@@ -8,20 +8,36 @@
 //! Everything runs against `stubmodbus` on loopback - no test ever connects to
 //! the real inverter, which must keep exactly one client at a time.
 
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 const PROXY_BIN: &str = env!("CARGO_BIN_EXE_muxproxy");
 const STUB_BIN: &str = env!("CARGO_BIN_EXE_stubmodbus");
 
+/// A port nothing else in this test process will be given.
+///
+/// Binding `:0` asks the kernel for a free port, but the listener is dropped again at once,
+/// so a second test thread asking at the same moment can be handed the very same number -
+/// and then one of the two stubs dies with `AddrInUse` and the case fails for a reason that
+/// has nothing to do with the proxy. The suite runs its cases in parallel, so every port
+/// handed out is remembered here for the lifetime of the process.
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    static TAKEN: OnceLock<Mutex<HashSet<u16>>> = OnceLock::new();
+    let taken = TAKEN.get_or_init(|| Mutex::new(HashSet::new()));
+    loop {
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        if taken.lock().unwrap().insert(port) {
+            return port;
+        }
+    }
 }
 
 fn wait_for_port(port: u16, what: &str) {
