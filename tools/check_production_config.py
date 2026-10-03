@@ -25,7 +25,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RS_PROJECT = os.path.dirname(HERE)
-PROD_CONFIG = os.path.join(os.path.dirname(RS_PROJECT), "modbus-proxy", "config.json")
+PROD_CONFIG = os.path.join(RS_PROJECT, "reference", "config.json")
 
 PASS, FAIL = [], []
 

@@ -1,6 +1,6 @@
 # muxproxy (Rust)
 
-A Rust reimplementation of [`../modbus-proxy/muxproxy.py`](../modbus-proxy/muxproxy.py):
+A Rust reimplementation of [`reference/muxproxy.py`](reference/muxproxy.py):
 the caching, multiplexing Modbus/TCP proxy that lets several readers share the
 SolarEdge inverter, which accepts **one** Modbus/TCP client at a time.
 
@@ -90,8 +90,8 @@ production-config check redirects the upstream to that stub.
 python3 tools/cross_check_python_suite.py
 ```
 
-That suite lives in the Python project and was written against the wire protocol,
-not against an implementation, which makes it a real oracle. It hardcodes the
+That suite lives with the Python reference in this repository and was written against the wire
+protocol, not against an implementation, which makes it a real oracle. It hardcodes the
 path to `muxproxy.py`, so the script generates a copy in a temp directory with
 only that command line changed and runs it there — the original file is never
 modified. Result: all 17 checks pass, including "exactly one upstream connection
@@ -124,7 +124,7 @@ read holding, unit id 7                        MATCH  03040000000a
 python3 tools/check_production_config.py        # add --musl for the static build
 ```
 
-Loads `../modbus-proxy/config.json` as it really is — 19 poll ranges, the SunSpec
+Loads `reference/config.json` as it really is — 19 poll ranges, the SunSpec
 header expectations, the scale-factor offsets — with the upstream host/port
 redirected to the stub. Checks that all 19 ranges parse identically, that
 `expect_header` and `sf_offsets` survive the parser, that the poller runs, that

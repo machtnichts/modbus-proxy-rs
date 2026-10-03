@@ -1,0 +1,60 @@
+{
+  "upstream": {
+    "host": "192.168.178.84",
+    "port": 1502,
+    "unit": 1,
+    "connect_timeout": 8.0,
+    "response_timeout": 10.0
+  },
+  "listen": {
+    "host": "0.0.0.0",
+    "port": 1503
+  },
+  "http": {
+    "host": "0.0.0.0",
+    "port": 1504
+  },
+  "poll": {
+    "interval_active": 5.0,
+    "interval_idle": 30.0,
+    "min_request_gap": 0.12,
+    "ondemand_ttl": 2.0,
+    "startup_delay": 0.0,
+    "max_registers_per_read": 125,
+    "ranges": [
+      { "name": "sunspec-inverter", "address": 40069, "count": 52,
+        "expect_header": [101, 50] },
+      { "name": "sunspec-common", "address": 40121, "count": 67 },
+      { "name": "sunspec-meter", "address": 40188, "count": 107,
+        "expect_header": [203, 105], "sf_offsets": [15, 17, 22, 54] },
+      { "name": "vendor-storage-a", "address": 40295, "count": 100 },
+      { "name": "vendor-storage-b", "address": 40395, "count": 100 },
+      { "name": "vendor-storage-c", "address": 40495, "count": 100 },
+      { "name": "vendor-storage-d", "address": 40595, "count": 100 },
+      { "name": "vendor-storage-e", "address": 40695, "count": 100 },
+      { "name": "vendor-storage-f", "address": 40795, "count": 100 },
+      { "name": "vendor-storage-g", "address": 40895, "count": 100 },
+      { "name": "vendor-storage-h", "address": 40995, "count": 100 },
+      { "name": "vendor-storage-i", "address": 41095, "count": 100 },
+      { "name": "vendor-storage-j", "address": 41195, "count": 80 },
+      { "name": "vendor-0xE000", "address": 57344, "count": 32 },
+      { "name": "vendor-0xE040", "address": 57408, "count": 32 },
+      { "name": "vendor-0xE100", "address": 57600, "count": 32 },
+      { "name": "vendor-0xE140", "address": 57664, "count": 64 },
+      { "name": "vendor-0xE170", "address": 57712, "count": 16 },
+      { "name": "vendor-0xE180", "address": 57728, "count": 16 }
+    ]
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "/home/adermake/EV-CHARGER-WT-HA/logs/muxproxy.log",
+    "max_bytes": 2097152,
+    "backup_count": 3
+  },
+  "policy": {
+    "allow_writes": true,
+    "reject_unsupported_functions": false,
+    "max_clients": 32,
+    "log_every_request": false
+  }
+}

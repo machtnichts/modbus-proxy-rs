@@ -1,8 +1,8 @@
 //! muxproxy (Rust) - caching, multiplexing Modbus/TCP proxy for a single-client
 //! device.
 //!
-//! Behaviour-compatible with the Python implementation next to it
-//! (`../modbus-proxy/muxproxy.py`): same config file, same CLI, same HTTP status
+//! Behaviour-compatible with the Python reference next to it
+//! (`reference/muxproxy.py`): same config file, same CLI, same HTTP status
 //! endpoints, same wire behaviour. The difference is that this builds to one
 //! self-contained binary with no interpreter and no packages.
 //!

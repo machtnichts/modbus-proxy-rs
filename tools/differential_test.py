@@ -27,7 +27,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RS = os.path.dirname(HERE)
-PY_PROXY = os.path.join(os.path.dirname(RS), "modbus-proxy", "muxproxy.py")
+PY_PROXY = os.path.join(RS, "reference", "muxproxy.py")
 RS_PROXY = os.path.join(RS, "target", "release", "muxproxy")
 STUB = os.path.join(RS, "target", "release", "stubmodbus")
 
