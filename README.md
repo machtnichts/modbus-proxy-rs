@@ -200,13 +200,15 @@ systemctl --user enable --now muxproxy-rs.service
 
 `config/muxproxy.json` is the config it runs with. Two values matter:
 
-- **`response_timeout`** — a SunSpec client's model scan probes addresses this inverter
-  never answers (50000). With a longer upstream timeout the proxy sits on such a probe
-  for the whole timeout while the client gives up first, and the client reports
-  `i/o timeout` and then `not a SunSpec device`. Real reads from this inverter take
-  ~50-100 ms. The file in service says **`5.0`**; an earlier note (and this comment in
-  the config itself) said 1.0, which is the value the reasoning above was written for -
-  see the open item in `STATE.md`.
+- **`response_timeout: 1.0`** — this proxy holds the plant's only device connection, so one
+  hung read stalls every reader; 1 s bounds that. The device answers in ~50-100 ms (p95
+  measured 161 ms), and the charging app's own Modbus client waits 6 s, so the app always
+  receives this proxy's clean exception (`0x0B`) instead of its own socket timeout. Until
+  2026-10-03 the value was 1 s for a **different** reason — a SunSpec model scan probing
+  address 50000, which this inverter never answers — and it had drifted to 5.0 unnoticed;
+  that client is gone, no read in the 50000-56999 range appears in the logs of
+  14.09.-03.10. at all. What to watch: `upstream_timeouts` must stay 0 (it did over 6.9
+  days); if it rises, 1 s is too tight for this inverter.
 - **`ranges: []`** — the proxy issues no requests of its own; the inverter only ever
   sees what the consumer asks for. Add ranges only if you want warm caches, at the cost of
   extra device traffic.
