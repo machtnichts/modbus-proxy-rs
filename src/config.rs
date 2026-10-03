@@ -18,6 +18,11 @@ pub struct UpstreamCfg {
     pub unit: u8,
     pub connect_timeout: Duration,
     pub response_timeout: Duration,
+    /// Close the upstream connection once it has been quiet for longer than this; the next
+    /// burst opens a fresh one. 0 = never close, i.e. carry one connection across idle
+    /// stretches (the behaviour before 2026-10-03, and the reason for ~1-3 lost cycles a
+    /// day: the device closes every connection after ~330 s - see upstream.rs).
+    pub idle_close: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -140,6 +145,7 @@ impl Config {
                 &["upstream", "response_timeout"],
                 10.0,
             )),
+            idle_close: Duration::from_secs_f64(get_f64(v, &["upstream", "idle_close_s"], 0.0)),
         };
 
         // http is optional: a null value or a missing block disables it

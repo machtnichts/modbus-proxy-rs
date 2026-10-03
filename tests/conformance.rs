@@ -61,10 +61,17 @@ struct Harness {
 
 impl Harness {
     fn start(ranges: &str, policy: &str) -> Harness {
-        Self::start_with_ttl(ranges, policy, 5.0)
+        Self::start_full(ranges, policy, 5.0, 0.0)
     }
 
     fn start_with_ttl(ranges: &str, policy: &str, ttl: f64) -> Harness {
+        Self::start_full(ranges, policy, ttl, 0.0)
+    }
+
+    /// `idle_close` > 0 makes the proxy drop the upstream connection once it has been quiet
+    /// that long, so the next burst opens its own (see the device's ~330 s connection
+    /// lifetime). 0 keeps the old behaviour: one connection carried across idle stretches.
+    fn start_full(ranges: &str, policy: &str, ttl: f64, idle_close: f64) -> Harness {
         let stub_port = free_port();
         let proxy_port = free_port();
         let http_port = free_port();
@@ -81,7 +88,7 @@ impl Harness {
             r#"{{
   "listen": {{"host": "127.0.0.1", "port": {proxy_port}}},
   "upstream": {{"host": "127.0.0.1", "port": {stub_port}, "unit": 1,
-               "connect_timeout": 5.0, "response_timeout": 5.0}},
+               "connect_timeout": 5.0, "response_timeout": 5.0, "idle_close_s": {idle_close}}},
   "http": {{"host": "127.0.0.1", "port": {http_port}}},
   "poll": {{"interval_active": 30.0, "interval_idle": 120.0, "min_request_gap": 0.01,
            "ondemand_ttl": {ttl}, "max_registers_per_read": 100, "startup_delay": 0.5,
@@ -488,4 +495,81 @@ fn an_expired_read_is_reported_instead_of_served_stale() {
     // No h.stop() here: it would wait on the already-killed stub's stdout. The proxy is
     // killed instead, which is all this harness still owns.
     let _ = h.proxy.kill();
+}
+
+/// The device closes every Modbus/TCP connection after ~330 s, whether or not it is being
+/// read on. Measured on this plant: of 844 failed reads whose connection age is known,
+/// **809 sat on connections 5-6 minutes old** (median and p90 exactly 330.3 s = 11 x the
+/// app's 30 s cycle). The old behaviour carried one connection across those 11 cycles and
+/// found out about the closure with the first read after it - one lost client cycle each
+/// time, ~1-3 a day.
+///
+/// So a connection must not be carried across the idle stretch between two client bursts.
+/// This test pins both halves of that: a burst after an idle stretch gets a connection of its
+/// own, and the reads *within* a burst still share the one they opened.
+#[test]
+fn an_idle_connection_is_not_carried_into_the_next_burst() {
+    // ttl 0.2 s: the second burst must really need the device, not the cache
+    let mut h = Harness::start_full(r#"[]"#, r#"{"allow_writes": true}"#, 0.2, 1.0);
+
+    let mut c = h.client();
+    assert_eq!(Harness::exchange(&mut c, &read_pdu(0, 4), 1)[0], 0x03);
+
+    // idle longer than idle_close_s
+    std::thread::sleep(Duration::from_millis(1200));
+
+    // burst 2: two reads of freshly expired spans -> one new connection, used twice
+    assert_eq!(Harness::exchange(&mut c, &read_pdu(0, 4), 1)[0], 0x03);
+    assert_eq!(Harness::exchange(&mut c, &read_pdu(10, 2), 1)[0], 0x03);
+
+    assert_eq!(
+        h.metric("upstream_idle_closes"),
+        1.0,
+        "exactly the one idle stretch must have been closed, no more"
+    );
+    assert_eq!(
+        h.metric("upstream_errors"),
+        0.0,
+        "closing an idle connection is housekeeping, not a failure"
+    );
+    assert_eq!(
+        h.metric("upstream_reconnects"),
+        0.0,
+        "and it must not show up as a fault on the proxy card"
+    );
+    assert_eq!(
+        h.metric("upstream_backoff_s"),
+        0.0,
+        "no failure, so no backoff either"
+    );
+
+    let out = h.stop();
+    assert_eq!(
+        out.matches("TRAFFIC").count(),
+        2,
+        "each burst must have carried traffic on its own connection:\n{}",
+        out
+    );
+}
+
+/// The other side of the same coin: with idle_close_s at its default 0 the connection is
+/// carried across the idle stretch, which is what the proxy did before - and precisely what
+/// let the device's ~330 s lifetime cost a cycle. Keeping this pinned makes the default a
+/// deliberate choice rather than an accident.
+#[test]
+fn without_idle_close_the_connection_is_kept() {
+    let mut h = Harness::start_full(r#"[]"#, r#"{"allow_writes": true}"#, 0.2, 0.0);
+    let mut c = h.client();
+    assert_eq!(Harness::exchange(&mut c, &read_pdu(0, 4), 1)[0], 0x03);
+    std::thread::sleep(Duration::from_millis(1200));
+    assert_eq!(Harness::exchange(&mut c, &read_pdu(0, 4), 1)[0], 0x03);
+
+    assert_eq!(h.metric("upstream_idle_closes"), 0.0, "0 disables the idle close");
+    let out = h.stop();
+    assert_eq!(
+        out.matches("TRAFFIC").count(),
+        1,
+        "the connection must be carried across the idle stretch:\n{}",
+        out
+    );
 }

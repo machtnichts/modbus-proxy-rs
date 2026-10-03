@@ -212,6 +212,15 @@ systemctl --user enable --now muxproxy-rs.service
 - **`ranges: []`** — the proxy issues no requests of its own; the inverter only ever
   sees what the consumer asks for. Add ranges only if you want warm caches, at the cost of
   extra device traffic.
+- **`idle_close_s: 10`** — the device closes every Modbus/TCP connection after ~330 s,
+  whether or not it is being read on (measured on this plant: of 844 failed reads whose
+  connection age is known, 809 sat on connections 5-6 minutes old, median and p90 exactly
+  330.3 s = 11 x a 30 s read cycle). Carrying one connection across those cycles meant the
+  device closed it under a read, and that read's client got exception `0x0B` and lost its
+  cycle. With `idle_close_s` the proxy closes an upstream connection once it has been quiet
+  that long, so each burst opens its own - a connect costs ~1 ms here. `0` restores the old
+  behaviour (one connection carried across idle stretches). Watch `upstream_idle_closes`
+  grow while `upstream_errors` stays flat.
 
 Only one Modbus client may hold the inverter. Two proxies, or a proxy plus a direct
 reader, produces `transaction id mismatch` in this proxy's log and errors in the consumer.

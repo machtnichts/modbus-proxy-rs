@@ -85,6 +85,8 @@ pub struct Upstream {
     connect_timeout: Duration,
     response_timeout: Duration,
     min_gap: Duration,
+    /// See `UpstreamCfg::idle_close`. Zero disables the idle close.
+    idle_close: Duration,
     conn: Mutex<Conn>,
     stats: Arc<Stats>,
 }
@@ -98,6 +100,7 @@ impl Upstream {
             connect_timeout: cfg.connect_timeout,
             response_timeout: cfg.response_timeout,
             min_gap,
+            idle_close: cfg.idle_close,
             conn: Mutex::new(Conn {
                 stream: None,
                 tid: 0,
@@ -106,6 +109,40 @@ impl Upstream {
                 next_attempt_at: None,
             }),
             stats,
+        }
+    }
+
+    /// Drop the upstream connection if it has been quiet for longer than `idle_close`, so the
+    /// next burst gets a fresh one.
+    ///
+    /// The device closes every Modbus/TCP connection after ~330 s, whether or not it is being
+    /// read on (measured on this plant: of 844 failed reads with a known connection age, 809
+    /// sat on connections 5-6 minutes old, median and p90 330.3 s - 11 x the app's 30 s cycle,
+    /// which is why the age is so sharp). The old behaviour carried one connection across those
+    /// 11 cycles and discovered the closure with the first read after it, costing the client
+    /// that cycle. Closing it ourselves while it is idle means no connection ever gets old
+    /// enough to be closed under a read - and a connect costs ~1 ms on this LAN (measured:
+    /// median 1 ms, max 32 ms from client arrival to upstream connect).
+    ///
+    /// Deliberately not `fail_locked`: nothing failed here, so this must not enter the failure
+    /// backoff, must not count as an upstream error, and must not raise `upstream_reconnects`
+    /// (which the app's proxy card shows as a fault signal).
+    fn close_if_stale(&self, conn: &mut Conn) {
+        if self.idle_close.is_zero() || conn.stream.is_none() {
+            return;
+        }
+        let quiet = match conn.last_request_at {
+            Some(t) => t.elapsed() >= self.idle_close,
+            None => false,
+        };
+        if !quiet {
+            return;
+        }
+        if let Some(s) = conn.stream.take() {
+            let _ = s.shutdown(std::net::Shutdown::Both);
+            self.stats
+                .upstream_idle_closes
+                .fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -188,6 +225,7 @@ impl Upstream {
     pub fn request(&self, pdu: &[u8], expect_response: bool) -> Result<Vec<u8>, UpstreamError> {
         let started = Instant::now();
         let mut conn = self.conn.lock().unwrap();
+        self.close_if_stale(&mut conn);
         self.connect_locked(&mut conn)?;
 
         if let Some(last) = conn.last_request_at {

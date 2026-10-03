@@ -20,6 +20,10 @@ pub struct Stats {
     pub upstream_writes: AtomicU64,
     pub upstream_errors: AtomicU64,
     pub upstream_reconnects: AtomicU64,
+    /// Connections the proxy closed on purpose because they had gone quiet (idle_close_s).
+    /// Deliberately *not* counted as reconnects: this is housekeeping, not a fault - the
+    /// point of the counter is that it grows while `upstream_errors` stays flat.
+    pub upstream_idle_closes: AtomicU64,
     /// Current retry backoff in ms. Non-zero means the proxy is deliberately leaving
     /// the device alone after a failed read - the honest version of "is it calm?".
     pub upstream_backoff_ms: AtomicU64,
@@ -58,6 +62,7 @@ impl Stats {
             upstream_writes: AtomicU64::new(0),
             upstream_errors: AtomicU64::new(0),
             upstream_reconnects: AtomicU64::new(0),
+            upstream_idle_closes: AtomicU64::new(0),
             upstream_backoff_ms: AtomicU64::new(0),
             upstream_timeouts: AtomicU64::new(0),
             poll_cycles: AtomicU64::new(0),
@@ -127,6 +132,10 @@ impl Stats {
             (
                 "upstream_reconnects".into(),
                 self.upstream_reconnects.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "upstream_idle_closes".into(),
+                self.upstream_idle_closes.load(Ordering::Relaxed) as f64,
             ),
             (
                 "upstream_backoff_s".into(),
