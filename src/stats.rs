@@ -28,7 +28,7 @@ pub struct Stats {
     pub poll_failures: AtomicU64,
     pub validation_failures: AtomicU64,
     pub last_upstream_ok_ms: AtomicU64,
-    /// Wall-clock ms of the last upstream error, so a UI can say "vor 15 min" instead of
+    /// Wall-clock ms of the last upstream error, so a UI can say "15 min ago" instead of
     /// showing a bare message with no idea whether it is one minute or one day old.
     pub last_upstream_error_ms: AtomicU64,
     pub last_poll_started_ms: AtomicU64,
