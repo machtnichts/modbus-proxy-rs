@@ -221,6 +221,11 @@ systemctl --user enable --now muxproxy-rs.service
   that long, so each burst opens its own - a connect costs ~1 ms here. `0` restores the old
   behaviour (one connection carried across idle stretches). Watch `upstream_idle_closes`
   grow while `upstream_errors` stays flat.
+  **The value has to sit between the two timescales of the traffic:** larger than the
+  spacing *within* a burst - with `min_request_gap: 1.0` and three windows that is up to
+  ~3 s, ~4 s if a read runs into its 1 s response timeout - and smaller than the read cycle
+  (30 s). 10 s is in the middle of that window. Too small and the proxy reconnects between
+  the three windows of one cycle, which would *add* connections instead of removing them.
 
 Only one Modbus client may hold the inverter. Two proxies, or a proxy plus a direct
 reader, produces `transaction id mismatch` in this proxy's log and errors in the consumer.
