@@ -6,6 +6,9 @@ Cargo.lock.orig
 # Installed binary (built by `make static` / `make install`)
 /bin/*
 
+# The saved baseline for the differential comparison (a binary, never committed)
+/baseline/*
+
 # Local run artifacts
 *.log
 *.stdout

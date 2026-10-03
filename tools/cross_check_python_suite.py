@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the original Python conformance suite against the Rust binary.
 
-Why this exists: the Python suite in reference/tools/ was written against
+Why this exists: the Python suite in tools/python/ was written against
 the wire protocol, not against an implementation, which makes it a genuine
 oracle. It hardcodes the path to muxproxy.py, so this script generates a copy in
 a temp directory with only that one command line changed and runs it there. The
@@ -17,8 +17,8 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RS_PROJECT = os.path.dirname(HERE)
-PY_PROJECT = os.path.join(RS_PROJECT, "reference")
-ORIGINAL = os.path.join(PY_PROJECT, "tools", "test_protocol_conformance.py")
+PY_PROJECT = os.path.join(RS_PROJECT, "tools", "python")
+ORIGINAL = os.path.join(PY_PROJECT, "test_protocol_conformance.py")
 
 OLD_SPAWN = '[sys.executable, PROXY, "-c", path]'
 NEW_SPAWN = '[BINARY, "-c", path]'

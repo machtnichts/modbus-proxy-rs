@@ -1,20 +1,21 @@
 # muxproxy (Rust)
 
-A Rust reimplementation of [`reference/muxproxy.py`](reference/muxproxy.py):
-the caching, multiplexing Modbus/TCP proxy that lets several readers share the
+The caching, multiplexing Modbus/TCP proxy that lets several readers share the
 SolarEdge inverter, which accepts **one** Modbus/TCP client at a time.
 
-It is behaviour-compatible on purpose. Same config file, same CLI, same HTTP
-status endpoints, same bytes on the wire — verified, not assumed (see
-[Verification](#verification)).
-
-The Python implementation stays exactly as it is. This is an alternative, not a
-replacement.
+It started as a port of a Python implementation of the same proxy and is
+behaviour-compatible with it on the wire - verified byte for byte, not assumed
+(see [Verification](#verification)). **The Python implementation itself was
+removed from this repository on 2026-10-03:** it had done its job (proving the
+port equal) and could no longer be kept in step - by then it was behind in four
+reported fields and published a `validation_failures` that was always 0. What is
+kept from it is the wire-protocol conformance suite in `tools/python/`, which
+still runs against this binary, and the four manual instruments next to it.
 
 ## Why
 
-The Python version needs a Python 3 interpreter and, for the charger app next to
-it, a virtualenv with third-party packages. That is a second thing that can break
+The Python version needed a Python 3 interpreter and, for the charger app next to
+it, a virtualenv with third-party packages. That was a second thing that could break
 on its own: a system upgrade, a moved interpreter, a rebuilt venv, and the
 inverter loses its proxy. This build has nothing underneath it:
 
@@ -48,15 +49,14 @@ Or just `make`, or `make static`. `make check` runs every verification below.
 ## Run
 
 ```sh
-./target/release/muxproxy -c ../modbus-proxy/config.json
+./target/release/muxproxy -c config/muxproxy.json          # what the service uses
 ./target/release/muxproxy -c config.json --listen-port 1503 --http-port 1504 --log-level INFO
 ```
 
-The config file is the *same* file the Python version reads, including the
-SunSpec `expect_header` and `sf_offsets` validation rules. Pointing it at the
-production config works unchanged (checked — see Verification).
+The config file format came over from the Python implementation unchanged,
+including the SunSpec `expect_header` and `sf_offsets` validation rules.
 
-Status endpoints, identical to the Python version:
+Status endpoints:
 
 | path | content |
 |---|---|
@@ -71,12 +71,12 @@ Everything below was actually run. No test ever connects to the real inverter:
 the app tests use a stub device on loopback (`src/bin/stubmodbus.rs`), and the
 production-config check redirects the upstream to that stub.
 
-**1. `cargo test` — 38 tests, all passing**
+**1. `cargo test` — 42 tests, all passing**
 
-- 27 unit tests: JSON parsing, config parsing, MBAP framing, bit packing,
+- 30 unit tests: JSON parsing, config parsing, MBAP framing, bit packing,
   signed conversions, cache expiry/stale rules, all three validation rules,
   write policy, timestamp formatting.
-- 11 wire-level integration tests (`tests/conformance.rs`) against the stub:
+- 12 wire-level integration tests (`tests/conformance.rs`) against the stub:
   framing and unit-id passthrough, device values not synthesised, repeat reads
   cost zero upstream requests, polled ranges answered from cache, on-demand
   fetch outside them, device exceptions relayed verbatim, count > 125 refused
@@ -90,22 +90,25 @@ production-config check redirects the upstream to that stub.
 python3 tools/cross_check_python_suite.py
 ```
 
-That suite lives with the Python reference in this repository and was written against the wire
+That suite lives in `tools/python/` and was written against the wire
 protocol, not against an implementation, which makes it a real oracle. It hardcodes the
-path to `muxproxy.py`, so the script generates a copy in a temp directory with
+path to the Python proxy, so the script generates a copy in a temp directory with
 only that command line changed and runs it there — the original file is never
 modified. Result: all 17 checks pass, including "exactly one upstream connection
 for all clients" and "25 cached reads cost the device 0 requests".
 
-**3. Differential test, Python proxy vs Rust proxy — 14/14 identical**
+**3. Differential test, this build against the baseline — 14/14 identical**
 
 ```sh
-python3 tools/differential_test.py
+make baseline     # ONCE, before installing a new build: save the binary in service
+make differential # the fresh build vs that baseline, byte for byte
 ```
 
-Both proxies get their own stub and then receive an identical scripted sequence;
-every response PDU is compared byte for byte. The interesting rows are the ones
-nobody would think to assert:
+Both binaries get their own stub and then receive an identical scripted sequence;
+every response PDU is compared byte for byte. This is how the port was checked
+against the Python implementation it came from, and it is how each change is
+checked now: against the build that was in service before it. The interesting rows
+are the ones nobody would think to assert:
 
 ```
 read holding 0..4                              MATCH  03080000000a0014001e
@@ -118,19 +121,25 @@ device identification (FC 0x41) unsupported    MATCH  c101
 read holding, unit id 7                        MATCH  03040000000a
 ```
 
-**4. Against the real production config — 13/13**
+**4. Against a full poll-range config — 13/13**
 
 ```sh
 python3 tools/check_production_config.py        # add --musl for the static build
 ```
 
-Loads `reference/config.json` as it really is — 19 poll ranges, the SunSpec
+Loads `config/poll-ranges.json` as it really is — 19 poll ranges, the SunSpec
 header expectations, the scale-factor offsets — with the upstream host/port
 redirected to the stub. Checks that all 19 ranges parse identically, that
 `expect_header` and `sf_offsets` survive the parser, that the poller runs, that
 validation is genuinely enforced (the stub does not return SunSpec data, so the
 header checks must fail), and that the real inverter's address appears nowhere in
 the log. All upstream traffic is confirmed on one stub connection.
+
+Note what this config is: it is the **poll-range** configuration the Python-era
+proxy ran with, kept because it is the only thing that exercises the polling and
+validation path. The configuration of the service today (`config/muxproxy.json`)
+has **no poll ranges at all** — the proxy issues no requests of its own and the
+inverter only ever sees what a client asked for.
 
 ## Deliberate equivalences
 
@@ -142,8 +151,8 @@ These look like bugs and are preserved, because a drop-in replacement that
   unit upstream and echoes the client's back.
 - **FC1/FC2 failures return exception `0x0B`** (gateway target failed to respond),
   while FC4 relays the device's own exception (verified: `810b` vs `8401`).
-- **`policy.max_clients` is parsed but not enforced** — the Python version does not
-  enforce it either. Present in the production config, unused in both.
+- **`policy.max_clients` is parsed but not enforced** — the Python implementation it
+  was ported from did not enforce it either. Present in the config, unused.
 - **Writes to an unsupported function are relayed as-is**, so the device's own
   exception PDU reaches the client unchanged (`c101`).
 
@@ -157,17 +166,20 @@ is for.
 ```
 src/main.rs        CLI, config load, signal handling, accept loop
 src/json.rs        JSON parser + serialiser (no serde)
-src/config.rs      typed config, same keys and defaults as the Python version
+src/config.rs      typed config, the same keys and defaults as the original Python format
 src/modbus.rs      function codes, exception codes, MBAP framing
 src/cache.rs       independently expiring register chunks
 src/upstream.rs    the single persistent connection and its backoff
 src/proxy.rs       dispatch, range validation, the poller
 src/httpd.rs       the status/metrics endpoints
 src/logging.rs     stdout + rotating file
-src/stats.rs       shared counters, same names as the Python version
+src/stats.rs       shared counters, the same names as the original implementation plus
+                   the fields the charging app reads (`upstream_backoff_s`,
+                   `validation_failures`, `last_upstream_error_at`)
 src/bin/stubmodbus.rs   stub device used by the tests
 tests/conformance.rs    wire-level integration tests
 tools/                  verification, differential and cross-check scripts
+tools/python/           the wire-protocol suite + instruments kept from the Python era
 ```
 
 ## Deployment
@@ -188,12 +200,13 @@ systemctl --user enable --now muxproxy-rs.service
 
 `config/muxproxy.json` is the config it runs with. Two values matter:
 
-- **`response_timeout: 1.0`** — a SunSpec client's model scan probes addresses this
-  inverter never answers (50000). With a longer upstream timeout the proxy sits on
-  such a probe for the whole timeout while the client gives up first, and the client
-  reports `i/o timeout` and then `not a SunSpec device`. Real reads from this inverter
-  take ~50-100 ms, so 1 s is 10x headroom. **The Python reference's `config.json`
-  still says 10 s: do not put it in front of a SunSpec client without lowering this.**
+- **`response_timeout`** — a SunSpec client's model scan probes addresses this inverter
+  never answers (50000). With a longer upstream timeout the proxy sits on such a probe
+  for the whole timeout while the client gives up first, and the client reports
+  `i/o timeout` and then `not a SunSpec device`. Real reads from this inverter take
+  ~50-100 ms. The file in service says **`5.0`**; an earlier note (and this comment in
+  the config itself) said 1.0, which is the value the reasoning above was written for -
+  see the open item in `STATE.md`.
 - **`ranges: []`** — the proxy issues no requests of its own; the inverter only ever
   sees what the consumer asks for. Add ranges only if you want warm caches, at the cost of
   extra device traffic.

@@ -1,20 +1,29 @@
 #!/usr/bin/env python3
-"""Differential test: Python proxy vs Rust proxy, byte for byte.
+"""Differential test: the current build against a known-good baseline binary.
 
-Both implementations get their own stub device (same deterministic behaviour:
-reg[i] = i * 10, addresses 50-52 forbidden) and then receive an identical
+Both sides are this same proxy, one version apart: the freshly built
+`target/release/muxproxy` and a saved baseline (`baseline/muxproxy`, normally the binary
+that was installed and in service before this change). Each gets its own stub device (same
+deterministic behaviour: reg[i] = i * 10, addresses 50-52 forbidden) and then the identical
 scripted sequence of requests. Every response PDU is compared byte for byte.
 
-This is stronger than "both pass the same tests": it catches divergences that a
-suite would not think to ask about - an exception code chosen differently, a
-byte count packed differently, a write echoed in another shape.
+This is stronger than "the same test suite passes": it catches divergences a suite would
+not think to ask about - an exception code chosen differently, a byte count packed
+differently, a write echoed in another shape. It is how the Rust proxy was checked against
+the Python implementation it was ported from, and it is how the next change is checked
+against the build that is running now.
 
-No poll ranges are configured, so both sides answer purely on demand and the
-comparison stays deterministic.
+No poll ranges are configured, so both sides answer purely on demand and the comparison
+stays deterministic.
 
-Usage: python3 tools/differential_test.py
+Usage:
+    python3 tools/differential_test.py                     # build vs baseline/muxproxy
+    python3 tools/differential_test.py --against <binary>  # build vs any other binary
+    python3 tools/differential_test.py --allow-missing-baseline   # for `make check`
 """
 
+import argparse
+import hashlib
 import json
 import os
 import socket
@@ -22,13 +31,12 @@ import struct
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RS = os.path.dirname(HERE)
-PY_PROXY = os.path.join(RS, "reference", "muxproxy.py")
-RS_PROXY = os.path.join(RS, "target", "release", "muxproxy")
+CURRENT = os.path.join(RS, "target", "release", "muxproxy")
+DEFAULT_BASELINE = os.path.join(RS, "baseline", "muxproxy")
 STUB = os.path.join(RS, "target", "release", "stubmodbus")
 
 # (label, unit id, PDU)
@@ -109,25 +117,50 @@ def start_stub(port):
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
 
-def start_proxy(cmd, config, port):
+def start_proxy(binary, config):
     tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
     json.dump(config, tmp, indent=2)
     tmp.close()
-    proc = subprocess.Popen(cmd + ["-c", tmp.name],
+    return subprocess.Popen([binary, "-c", tmp.name],
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    return proc
 
 
-def main():
-    for path, what in ((PY_PROXY, "python proxy"), (RS_PROXY, "rust proxy"),
-                       (STUB, "stub device")):
-        if not os.path.exists(path):
-            print("missing %s: %s" % (what, path))
-            return 2
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()[:16]
 
-    py_stub, rs_stub = free_port(), free_port()
-    py_listen, rs_listen = free_port(), free_port()
-    py_http, rs_http = free_port(), free_port()
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--against", default=DEFAULT_BASELINE,
+                    help="the known-good binary to compare against (default %s)"
+                         % os.path.relpath(DEFAULT_BASELINE, RS))
+    ap.add_argument("--current", default=CURRENT, help="the freshly built binary")
+    ap.add_argument("--allow-missing-baseline", action="store_true",
+                    help="exit 0 with a note when the baseline is absent (used by `make check`)")
+    args = ap.parse_args()
+
+    if not os.path.exists(args.current):
+        print("missing current build: %s (run `make build` first)" % args.current)
+        return 2
+    if not os.path.exists(STUB):
+        print("missing stub device: %s (run `make build` first)" % STUB)
+        return 2
+    if not os.path.exists(args.against):
+        print("no baseline binary at %s" % args.against)
+        print("A baseline is the build that was installed and known to work - the point of")
+        print("this comparison is one version against the next. Save one BEFORE installing a")
+        print("new build:  make baseline   (copies bin/muxproxy to baseline/muxproxy)")
+        return 0 if args.allow_missing_baseline else 2
+
+    same_bytes = sha256(args.current) == sha256(args.against)
+
+    baseline_stub, current_stub = free_port(), free_port()
+    baseline_listen, current_listen = free_port(), free_port()
+    baseline_http, current_http = free_port(), free_port()
 
     def config(listen, http, upstream):
         return {
@@ -145,36 +178,39 @@ def main():
 
     procs = []
     try:
-        procs.append(start_stub(py_stub))
-        procs.append(start_stub(rs_stub))
-        if not wait_port(py_stub) or not wait_port(rs_stub):
+        procs.append(start_stub(baseline_stub))
+        procs.append(start_stub(current_stub))
+        if not wait_port(baseline_stub) or not wait_port(current_stub):
             print("a stub never came up")
             return 2
 
-        procs.append(start_proxy([sys.executable, PY_PROXY],
-                                 config(py_listen, py_http, py_stub), py_listen))
-        procs.append(start_proxy([RS_PROXY],
-                                 config(rs_listen, rs_http, rs_stub), rs_listen))
-        if not wait_port(py_listen) or not wait_port(rs_listen):
+        procs.append(start_proxy(args.against, config(baseline_listen, baseline_http,
+                                                      baseline_stub)))
+        procs.append(start_proxy(args.current, config(current_listen, current_http,
+                                                      current_stub)))
+        if not wait_port(baseline_listen) or not wait_port(current_listen):
             print("a proxy never came up")
             return 2
 
-        print("python proxy : %s" % PY_PROXY)
-        print("rust proxy   : %s" % RS_PROXY)
+        print("baseline : %s  %s" % (args.against, sha256(args.against)))
+        print("current  : %s  %s" % (args.current, sha256(args.current)))
+        if same_bytes:
+            print("NOTE: both are the same bytes - this run proves nothing was rebuilt, not")
+            print("      that a change was verified. Rebuild before trusting it.")
         print("-" * 78)
         print("%-46s %-9s %s" % ("request", "result", "response PDU"))
         print("-" * 78)
 
         mismatches = []
         for label, unit, pdu in SEQUENCE:
-            a = mb_request(py_listen, unit, pdu)
-            b = mb_request(rs_listen, unit, pdu)
+            a = mb_request(baseline_listen, unit, pdu)
+            b = mb_request(current_listen, unit, pdu)
             ok = a == b
             if not ok:
                 mismatches.append(label)
             print("%-46s %-9s %s" % (label[:46], "MATCH" if ok else "DIFFER", b))
             if not ok:
-                print("%-46s %-9s %s" % ("  ^ python said", "", a))
+                print("%-46s %-9s %s" % ("  ^ baseline said", "", a))
 
         print("-" * 78)
         total = len(SEQUENCE)

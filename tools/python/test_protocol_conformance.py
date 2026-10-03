@@ -3,6 +3,11 @@
 Protocol conformance test for muxproxy - runs entirely against a stub Modbus
 device on loopback, so the real inverter is never touched.
 
+Kept from the Python era: the Python implementation this was written for was
+removed on 2026-10-03. Run it through `tools/cross_check_python_suite.py`, which
+points its spawn line at the Rust binary (this file's own `PROXY` constant still
+names the deleted Python file, which is why it cannot be started directly).
+
 Question being answered: does the proxy actually speak Modbus/TCP, or does it
 merely pretend to? Each check below inspects raw bytes on the wire.
 

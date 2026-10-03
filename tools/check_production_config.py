@@ -25,7 +25,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RS_PROJECT = os.path.dirname(HERE)
-PROD_CONFIG = os.path.join(RS_PROJECT, "reference", "config.json")
+PROD_CONFIG = os.path.join(RS_PROJECT, "config", "poll-ranges.json")
 
 PASS, FAIL = [], []
 
@@ -152,7 +152,7 @@ def main():
         check("SunSpec header mismatch rejected", float(metrics.get("validation_failures", 0)) >= 1,
               "validation_failures=%s" % metrics.get("validation_failures"))
 
-        print("5) the status surface mirrors the Python layout")
+        print("5) the status surface the app reads is intact")
         status = json.loads(get(http_port, "/"))
         check("status/upstream/listen present",
               all(k in status for k in ("status", "upstream", "listen", "stats")))
